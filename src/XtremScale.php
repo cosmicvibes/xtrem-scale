@@ -68,6 +68,8 @@ class XtremScale
             $startCommand = "\x02" . "00FFE10110000" . "\x03" . "\r\n";
 
             $reading = null;
+            $status = null;
+            $consecutiveStatusFrames = 0;
             $maxAttempts = (int) ceil($this->timeout / 0.2);
             $attempt = 0;
 
@@ -78,9 +80,27 @@ class XtremScale
                 $this->sendCommand($startCommand);
 
                 $response = $this->receiveData();
+
                 if ($response !== null) {
                     $reading = $this->parseWeightFrame($response);
+
+                    if ($reading === null) {
+                        // With nothing on the platform the scale streams status frames
+                        // (address 0100) instead of weights. Once a few arrive with no
+                        // weight among them, it is telling us it has none to give --
+                        // report that immediately rather than burning the full timeout.
+                        $frameStatus = $this->parseStatusFrame($response);
+
+                        if ($frameStatus !== null) {
+                            $status = $frameStatus;
+
+                            if (++$consecutiveStatusFrames >= 5) {
+                                break;
+                            }
+                        }
+                    }
                 }
+
                 $attempt++;
             }
 
@@ -92,7 +112,9 @@ class XtremScale
             socket_close($this->socket);
 
             if ($reading === null) {
-                return $this->failure('No response from scale');
+                return $status !== null
+                    ? $this->failure($status['message'], $status['code'])
+                    : $this->failure('No response from scale');
             }
 
             return $reading + [
@@ -113,9 +135,9 @@ class XtremScale
      * An unsuccessful read, shaped like a successful one so callers can read the
      * same keys either way.
      *
-     * @return array{weight: string, gross: null, tare: null, net: null, unit: null, stable: bool, net_displayed: bool, success: bool, error: string}
+     * @return array{weight: string, gross: null, tare: null, net: null, unit: null, stable: bool, net_displayed: bool, status_code: int|null, success: bool, error: string}
      */
-    private function failure(string $error): array
+    private function failure(string $error, ?int $statusCode = null): array
     {
         return [
             'weight' => '',
@@ -125,8 +147,51 @@ class XtremScale
             'unit' => null,
             'stable' => false,
             'net_displayed' => false,
+            'status_code' => $statusCode,
             'success' => false,
             'error' => $error,
+        ];
+    }
+
+    /**
+     * Parse a status frame (parameter address 0100), which the scale streams instead
+     * of weights when it has none to report.
+     *
+     * @return array{code: int, message: string}|null
+     */
+    private function parseStatusFrame(string $data): ?array
+    {
+        $start = strpos($data, "\x02");
+        $end = strpos($data, "\x03", $start === false ? 0 : $start);
+
+        if ($start === false || $end === false) {
+            return null;
+        }
+
+        $frame = substr($data, $start + 1, $end - $start - 1);
+
+        if (substr($frame, 5, 4) !== '0100' || ! ctype_xdigit(substr($frame, 11, 2))) {
+            return null;
+        }
+
+        $code = hexdec(substr($frame, 11, 2)) & 0x1F;
+
+        if ($code === 0) {
+            return null;
+        }
+
+        return [
+            'code' => $code,
+            'message' => match ($code) {
+                1 => 'Scale error 01: flash memory error',
+                2 => 'Scale error 02: ADC failure',
+                3 => 'Scale error 03: load cell signal out of range',
+                4 => 'Load cell signal too high (ADC H)',
+                5 => 'Load cell signal too low (ADC L)',
+                7 => 'Overload: weight exceeds the scale maximum',
+                8 => 'Scale is not showing a weight (display shows dashes)',
+                default => "Scale reported error status {$code}",
+            },
         ];
     }
 
@@ -196,7 +261,7 @@ class XtremScale
      * Anything that is not a well-formed 0107 frame returns null so the caller can
      * wait for the next datagram.
      *
-     * @return array{weight: string, gross: float, tare: float, net: float, unit: string, stable: bool, net_displayed: bool}|null
+     * @return array{status_code: null, weight: string, gross: float, tare: float, net: float, unit: string, stable: bool, net_displayed: bool}|null
      */
     private function parseWeightFrame(string $data): ?array
     {
@@ -256,6 +321,7 @@ class XtremScale
         $displayed = $netDisplayed ? $net : $gross;
 
         return [
+            'status_code' => null,
             'weight' => number_format($displayed, $decimals, '.', '') . ' ' . $unit,
             'gross' => $gross,
             'tare' => $tare,
