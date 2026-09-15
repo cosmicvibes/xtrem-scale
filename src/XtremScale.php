@@ -18,6 +18,12 @@ class XtremScale
     /** Stop the weight stream (parameter address 1010). */
     private const STOP_STREAM = "\x02" . "00FFE10100000" . "\x03" . "\r\n";
 
+    /** Tare: take the current gross weight as the tare, so net reads zero (address 0102). */
+    private const TARE = "\x02" . "00FFE01020000" . "\x03" . "\r\n";
+
+    /** Zero: re-zero the scale (address 0105). */
+    private const ZERO = "\x02" . "00FFE01050000" . "\x03" . "\r\n";
+
     /**
      * Create a new XtremScale instance
      *
@@ -334,6 +340,70 @@ class XtremScale
             'unit' => $unit,
             'stable' => $stable,
             'net_displayed' => $netDisplayed,
+        ];
+    }
+
+    /**
+     * Tare the scale: take whatever is on the platform now as the tare, so that net
+     * weight reads zero. Equivalent to pressing TARE on the scale itself.
+     *
+     * @return array{success: bool, error: string|null}
+     */
+    public function tare(): array
+    {
+        return $this->sendControlCommand(self::TARE);
+    }
+
+    /**
+     * Re-zero the scale. Equivalent to pressing ZERO on the scale itself.
+     *
+     * @return array{success: bool, error: string|null}
+     */
+    public function zero(): array
+    {
+        return $this->sendControlCommand(self::ZERO);
+    }
+
+    /**
+     * Send a one-shot control command.
+     *
+     * This deliberately does not bind the receive port. A control command only needs
+     * to be sent, and binding that port would fight whichever process owns the
+     * stream; sending from an ephemeral port is safe alongside a running reader. The
+     * command also does not alter streaming state, so it cannot blind other readers.
+     *
+     * @return array{success: bool, error: string|null}
+     */
+    private function sendControlCommand(string $command): array
+    {
+        // Reuse an open stream socket if this instance has one, otherwise send from a
+        // throwaway socket.
+        $socket = $this->socket ?: null;
+        $temporary = false;
+
+        if (! $socket) {
+            $socket = socket_create(AF_INET, SOCK_DGRAM, SOL_UDP);
+
+            if ($socket === false) {
+                return [
+                    'success' => false,
+                    'error' => 'Failed to create socket: ' . socket_strerror(socket_last_error()),
+                ];
+            }
+
+            $temporary = true;
+        }
+
+        $sent = @socket_sendto($socket, $command, strlen($command), 0, $this->ipAddress, $this->sendPort);
+        $error = $sent === false ? socket_strerror(socket_last_error($socket)) : null;
+
+        if ($temporary) {
+            socket_close($socket);
+        }
+
+        return [
+            'success' => $sent !== false,
+            'error' => $error,
         ];
     }
 
