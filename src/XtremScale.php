@@ -12,6 +12,12 @@ class XtremScale
     private $socket;
     private int $timeout;
 
+    /** Start the weight stream (parameter address 1011). */
+    private const START_STREAM = "\x02" . "00FFE10110000" . "\x03" . "\r\n";
+
+    /** Stop the weight stream (parameter address 1010). */
+    private const STOP_STREAM = "\x02" . "00FFE10100000" . "\x03" . "\r\n";
+
     /**
      * Create a new XtremScale instance
      *
@@ -65,7 +71,7 @@ class XtremScale
             // Send start streaming command, resending every ~200ms until we get a
             // response, since a single lost UDP packet would otherwise leave us
             // waiting for a reply the scale never received the request for.
-            $startCommand = "\x02" . "00FFE10110000" . "\x03" . "\r\n";
+            $startCommand = self::START_STREAM;
 
             $reading = null;
             $status = null;
@@ -104,11 +110,10 @@ class XtremScale
                 $attempt++;
             }
 
-            // Send stop streaming command
-            $stopCommand = "\x02" . "00FFE10100000" . "\x03" . "\r\n";
-            $this->sendCommand($stopCommand);
-
-            // Close socket
+            // Deliberately no stop command. The scale's streaming state is global, so
+            // stopping it here would blind every other reader (another viewer, an API
+            // client, or the scales:listen daemon) mid-read. Leaving the stream running
+            // costs nothing -- the scale simply keeps pushing frames.
             socket_close($this->socket);
 
             if ($reading === null) {
@@ -330,6 +335,107 @@ class XtremScale
             'stable' => $stable,
             'net_displayed' => $netDisplayed,
         ];
+    }
+
+    /**
+     * Open a long-lived stream for this scale.
+     *
+     * This is the supported way to read a scale continuously. Unlike getWeight(),
+     * which opens and closes a socket per call, the caller holds the socket open and
+     * consumes the frames the scale is already pushing (~14/sec). Intended for a
+     * single owning process -- see the scales:listen command -- so that any number of
+     * viewers and API clients can share one reader instead of competing for the
+     * scale's fixed receive port.
+     *
+     * @throws Exception if the socket cannot be created or bound
+     */
+    public function openStream(): void
+    {
+        $this->socket = socket_create(AF_INET, SOCK_DGRAM, SOL_UDP);
+
+        if ($this->socket === false) {
+            throw new Exception('Failed to create socket: ' . socket_strerror(socket_last_error()));
+        }
+
+        // Non-blocking-ish: the owning process multiplexes with socket_select(), so a
+        // read should never sit waiting.
+        socket_set_option($this->socket, SOL_SOCKET, SO_RCVTIMEO, ['sec' => 0, 'usec' => 50000]);
+        socket_set_option($this->socket, SOL_SOCKET, SO_REUSEADDR, 1);
+
+        if (! socket_bind($this->socket, '0.0.0.0', $this->receivePort)) {
+            $error = socket_strerror(socket_last_error($this->socket));
+            socket_close($this->socket);
+            $this->socket = null;
+
+            throw new Exception('Failed to bind socket: ' . $error);
+        }
+
+        $this->sendCommand(self::START_STREAM);
+    }
+
+    /**
+     * The underlying socket, so the owning process can socket_select() across several
+     * scales from a single loop.
+     *
+     * @return \Socket|null
+     */
+    public function streamSocket()
+    {
+        return $this->socket ?: null;
+    }
+
+    /**
+     * Re-assert the stream. UDP is lossy and the scale stops streaming if it is power
+     * cycled, so the owning process should call this periodically.
+     */
+    public function keepStreamAlive(): void
+    {
+        if ($this->socket) {
+            $this->sendCommand(self::START_STREAM);
+        }
+    }
+
+    /**
+     * Consume one waiting datagram.
+     *
+     * Returns a reading in the same shape as getWeight(), or null when the datagram
+     * was not something we can report (an acknowledgement frame, or nothing waiting).
+     *
+     * @return array<string, mixed>|null
+     */
+    public function readStreamFrame(): ?array
+    {
+        $raw = $this->receiveData();
+
+        if ($raw === null) {
+            return null;
+        }
+
+        $reading = $this->parseWeightFrame($raw);
+
+        if ($reading !== null) {
+            return $reading + ['success' => true, 'error' => null];
+        }
+
+        $status = $this->parseStatusFrame($raw);
+
+        if ($status !== null) {
+            return $this->failure($status['message'], $status['code']);
+        }
+
+        return null;
+    }
+
+    /**
+     * Release the socket. The stream itself is left running on the scale for the
+     * reasons described in getWeight().
+     */
+    public function closeStream(): void
+    {
+        if ($this->socket) {
+            socket_close($this->socket);
+            $this->socket = null;
+        }
     }
 
     /**

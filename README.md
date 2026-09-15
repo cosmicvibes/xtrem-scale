@@ -99,11 +99,69 @@ The `getWeight()` method returns an array with:
 
 ```php
 [
-    'weight' => '123.45 kg',  // The weight reading
-    'success' => true,         // Whether the read was successful
-    'error' => null            // Error message if success is false
+    'weight' => '0.133 kg',   // What the scale's own display shows
+    'gross' => 0.133,         // Gross weight
+    'tare' => 0.0,            // Tare
+    'net' => 0.133,           // Gross minus tare
+    'unit' => 'kg',
+    'stable' => true,         // False while the reading is still settling
+    'net_displayed' => false, // True when the scale is displaying net, not gross
+    'status_code' => null,    // Scale status code when it cannot report a weight
+    'success' => true,
+    'error' => null,
 ]
 ```
+
+`weight` mirrors whichever of gross/net the scale itself is displaying, at the
+scale's own resolution.
+
+When the scale cannot report a weight it streams a status frame instead, and
+`success` is `false` with `status_code` set and `error` describing it:
+
+| `status_code` | Meaning |
+|---|---|
+| 1 | Flash memory error |
+| 2 | ADC failure |
+| 3 | Load cell signal out of range |
+| 4 / 5 | Load cell signal too high / too low |
+| 7 | Overload — weight exceeds the scale maximum |
+| 8 | Scale is not showing a weight (display shows dashes) |
+
+Status code 8 is normal: it is what the scale reports when it is idle with nothing
+on the platform.
+
+## Reading continuously (multiple consumers)
+
+A scale can only usefully be read by **one process at a time**:
+
+- Its UDP receive port can only be usefully bound once per host — two readers on the
+  same machine will steal each other's datagrams.
+- Its streaming state is **global**, so a client that stops the stream blinds every
+  other reader, on every machine.
+
+`getWeight()` is therefore only appropriate for occasional one-off reads. To serve
+many consumers, have a single process own the stream and publish the readings for
+everything else to consume:
+
+```php
+$scale = new XtremScale('192.168.1.100', 4444, 5555);
+$scale->openStream();          // binds the socket, starts the stream
+
+while (true) {
+    // Multiplex with socket_select() across several scales if needed
+    while (($reading = $scale->readStreamFrame()) !== null) {
+        $latest = $reading;    // the scale pushes ~14 frames/sec
+    }
+
+    $scale->keepStreamAlive(); // periodically re-assert the stream
+    // publish $latest somewhere shared (cache, Redis, ...)
+}
+
+$scale->closeStream();
+```
+
+Neither `getWeight()` nor `closeStream()` sends the stop command, precisely so that
+one consumer can never switch off another's stream.
 
 ## Requirements
 
