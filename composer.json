@@ -1,0 +1,24 @@
+{
+    "name": "cosmicvibes/xtrem-scale",
+    "description": "Laravel package for Gram Xtreme F-06 scales",
+    "type": "library",
+    "license": "MIT",
+    "autoload": {
+        "psr-4": {
+            "CosmicVibes\\XtremScale\\": "src/"
+        }
+    },
+    "require": {
+        "php": "^8.2",
+        "illuminate/support": "^10.0|^11.0|^12.0"
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "CosmicVibes\\XtremScale\\XtremScaleServiceProvider"
+            ]
+        }
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true
+}
