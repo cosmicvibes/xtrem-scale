@@ -11,8 +11,12 @@ jobs:
       fail-fast: false
       matrix:
         php: ['8.2', '8.3', '8.4']
-        # Orchestra Testbench 8 / 9 / 10 target Laravel 10 / 11 / 12 respectively.
-        testbench: ['^8.0', '^9.0', '^10.0']
+        # Orchestra Testbench 8 / 9 / 10 / 11 target Laravel 10 / 11 / 12 / 13 respectively.
+        testbench: ['^8.0', '^9.0', '^10.0', '^11.0']
+        exclude:
+          # Laravel 13 (Testbench 11) requires PHP 8.3+.
+          - php: '8.2'
+            testbench: '^11.0'
 
     name: PHP ${{ matrix.php }} — testbench ${{ matrix.testbench }}
 

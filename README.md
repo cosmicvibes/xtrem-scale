@@ -166,7 +166,7 @@ one consumer can never switch off another's stream.
 ## Requirements
 
 - PHP 8.2 or higher
-- Laravel 10.x, 11.x, or 12.x
+- Laravel 10.x, 11.x, 12.x, or 13.x
 - UDP sockets enabled (sockets extension)
 
 ## Network Configuration
