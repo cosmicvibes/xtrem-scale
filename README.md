@@ -17,7 +17,7 @@ Or add it as a local package by adding this to your main `composer.json`:
     "repositories": [
         {
             "type": "path",
-            "url": "./packages/xtrem-scale"
+            "url": "../xtrem-scale"
         }
     ],
     "require": {
@@ -165,8 +165,8 @@ one consumer can never switch off another's stream.
 
 ## Requirements
 
-- PHP 8.1 or higher
-- Laravel 10.x or 11.x
+- PHP 8.2 or higher
+- Laravel 10.x, 11.x, or 12.x
 - UDP sockets enabled (sockets extension)
 
 ## Network Configuration

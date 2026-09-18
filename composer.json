@@ -1,16 +1,43 @@
 {
     "name": "cosmicvibes/xtrem-scale",
-    "description": "Laravel package for Gram Xtreme F-06 scales",
+    "description": "Laravel package for communicating with Gram Xtreme F-06 scales over UDP.",
+    "keywords": [
+        "laravel",
+        "scale",
+        "weighing",
+        "gram-xtreme",
+        "udp"
+    ],
     "type": "library",
     "license": "MIT",
+    "authors": [
+        {
+            "name": "Cosmic Vibes",
+            "homepage": "https://github.com/cosmicvibes"
+        }
+    ],
+    "homepage": "https://github.com/cosmicvibes/xtrem-scale",
+    "support": {
+        "issues": "https://github.com/cosmicvibes/xtrem-scale/issues",
+        "source": "https://github.com/cosmicvibes/xtrem-scale"
+    },
+    "require": {
+        "php": "^8.2",
+        "illuminate/support": "^10.0|^11.0|^12.0"
+    },
+    "require-dev": {
+        "orchestra/testbench": "^10.0",
+        "phpunit/phpunit": "^11.5"
+    },
     "autoload": {
         "psr-4": {
             "CosmicVibes\\XtremScale\\": "src/"
         }
     },
-    "require": {
-        "php": "^8.2",
-        "illuminate/support": "^10.0|^11.0|^12.0"
+    "autoload-dev": {
+        "psr-4": {
+            "CosmicVibes\\XtremScale\\Tests\\": "tests/"
+        }
     },
     "extra": {
         "laravel": {
@@ -19,6 +46,9 @@
             ]
         }
     },
-    "minimum-stability": "dev",
+    "config": {
+        "sort-packages": true
+    },
+    "minimum-stability": "stable",
     "prefer-stable": true
 }
