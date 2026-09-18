@@ -118,7 +118,7 @@ class XtremScale
 
             // Deliberately no stop command. The scale's streaming state is global, so
             // stopping it here would blind every other reader (another viewer, an API
-            // client, or the scales:listen daemon) mid-read. Leaving the stream running
+            // client, or a long-running listener/daemon) mid-read. Leaving the stream running
             // costs nothing -- the scale simply keeps pushing frames.
             socket_close($this->socket);
 
@@ -413,7 +413,7 @@ class XtremScale
      * This is the supported way to read a scale continuously. Unlike getWeight(),
      * which opens and closes a socket per call, the caller holds the socket open and
      * consumes the frames the scale is already pushing (~14/sec). Intended for a
-     * single owning process -- see the scales:listen command -- so that any number of
+     * single owning process (e.g., a long-running listener) so that any number of
      * viewers and API clients can share one reader instead of competing for the
      * scale's fixed receive port.
      *
